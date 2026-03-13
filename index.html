@@ -256,6 +256,7 @@ body{font-family:'Nunito','Nanum Gothic',sans-serif;background:var(--bg);min-hei
     <button class="api-save" onclick="saveKey()">저장</button>
     <span class="api-badge no" id="apiBadge">⚠️ 미설정</span>
   </div>
+  <!-- 목소리 바 -->
   <div class="voice-bar">
     <label>🎤 목소리</label>
     <div class="voice-group">
@@ -268,7 +269,7 @@ body{font-family:'Nunito','Nanum Gothic',sans-serif;background:var(--bg);min-hei
       <button class="voice-btn" id="vuM" onclick="setUserVoice('male',this)">👨 남성</button>
     </div>
     <button class="voice-test" onclick="testVoices()">🔊 테스트</button>
-    <span class="voice-status" id="voiceStatus">로딩 중...</span>
+    <span class="voice-status" id="voiceStatus">확인 중...</span>
   </div>
   <!-- 실력 대시보드 -->
   <div class="skill-bar" id="skillBar">
@@ -630,17 +631,20 @@ let availableVoices=[], voiceMap={female:null,male:null};
 let aiVoiceGender='female', userVoiceGender='female', ttWord='';
 
 function loadVoices(){
+  if(!window.speechSynthesis) return;
   availableVoices=speechSynthesis.getVoices();
   if(!availableVoices.length) return;
   const en=availableVoices.filter(v=>v.lang.startsWith('en'));
   const fk=['samantha','zira','victoria','karen','moira','tessa','female'];
   const mk=['daniel','david','alex','mark','fred','male','james'];
-  voiceMap.female=en.find(v=>fk.some(k=>v.name.toLowerCase().includes(k)))||en[0];
-  voiceMap.male  =en.find(v=>mk.some(k=>v.name.toLowerCase().includes(k)))||en.find(v=>v!==voiceMap.female)||en[en.length-1];
+  voiceMap.female=en.find(v=>fk.some(k=>v.name.toLowerCase().includes(k)))||en[0]||null;
+  voiceMap.male  =en.find(v=>mk.some(k=>v.name.toLowerCase().includes(k)))||en.find(v=>v!==voiceMap.female)||en[en.length-1]||null;
   const st=document.getElementById('voiceStatus');
   if(st){st.textContent=`✅ ${en.length}개 목소리`;st.style.color='#2E7D32';}
 }
-if(speechSynthesis.onvoiceschanged!==undefined) speechSynthesis.onvoiceschanged=loadVoices;
+if(window.speechSynthesis && speechSynthesis.onvoiceschanged!==undefined){
+  speechSynthesis.onvoiceschanged=loadVoices;
+}
 setTimeout(loadVoices,500);
 
 function getVoiceCfg(role){
@@ -657,14 +661,17 @@ function getVoiceCfg(role){
 function setAiVoice(g,btn){aiVoiceGender=g;document.querySelectorAll('#vbF,#vbM').forEach(b=>b.classList.remove('active'));btn.classList.add('active');}
 function setUserVoice(g,btn){userVoiceGender=g;document.querySelectorAll('#vuF,#vuM').forEach(b=>b.classList.remove('active'));btn.classList.add('active');}
 function testVoices(){
+  if(!window.speechSynthesis){addMsg('ai','⚠️ 이 브라우저는 음성 출력을 지원하지 않아요. Chrome을 사용해주세요!');return;}
   speechSynthesis.cancel();
   const segs=[
     {text:"Hello! I'm your English teacher!",role:'narrator'},
     {text:"Let's learn English together!",role:aiVoiceGender==='female'?'female':'male'},
   ];
+  isPlaying=true;
   speakSeq(segs,0,0.85);
 }
 function utterSpeak(text,voice,rate=0.9,pitch=1.0){
+  if(!window.speechSynthesis) return;
   speechSynthesis.cancel();
   const u=new SpeechSynthesisUtterance(text.substring(0,300));
   u.lang='en-US';u.rate=rate;u.pitch=pitch;if(voice)u.voice=voice;
@@ -682,9 +689,9 @@ function speakAiText(text){
 // ══════════════════════════════════════════════
 let isPlaying=false,curStory=null,storySegs=[];
 function speakSeq(segs,idx,baseRate){
-  if(!isPlaying||idx>=segs.length){
+  if(!window.speechSynthesis||!isPlaying||idx>=segs.length){
     stopStory();
-    if(idx>=segs.length) onStoryFinished(); // 완독 XP
+    if(idx>=segs.length) onStoryFinished();
     return;
   }
   const seg=segs[idx],cfg=getVoiceCfg(seg.role),rate=cfg.rate||baseRate;
@@ -709,7 +716,8 @@ function togglePlay(){
   speakSeq(storySegs,0,parseFloat(document.getElementById('speedSel').value));
 }
 function stopStory(){
-  isPlaying=false;speechSynthesis.cancel();
+  isPlaying=false;
+  if(window.speechSynthesis) speechSynthesis.cancel();
   const btn=document.getElementById('playBtn');
   if(btn){btn.textContent='▶ 읽어주기';btn.classList.remove('playing');}
   document.querySelectorAll('.story-line').forEach(s=>s.classList.remove('reading-highlight'));
@@ -970,9 +978,15 @@ let apiKey='',level='kid',mode='chat',scene='cafe',score=0,history=[],recog=null
 window.onload=()=>{
   apiKey=localStorage.getItem('ef_key')||'';
   if(apiKey){document.getElementById('apiInput').value=apiKey;setApiOk(true);}
-  // 오늘 날짜 표시
   const today=new Date();
   document.getElementById('todayBadge').textContent=`📅 ${today.getMonth()+1}/${today.getDate()} 오늘의 학습`;
+  // 음성 지원 여부 체크
+  const voiceSt=document.getElementById('voiceStatus');
+  if(!window.speechSynthesis){
+    if(voiceSt){voiceSt.textContent='⚠️ 음성 미지원 (Chrome 권장)';voiceSt.style.color='#E65100';}
+  } else {
+    loadVoices();
+  }
 };
 
 function startApp(lv){
@@ -1343,19 +1357,149 @@ function updateScore(){
 function celebrate(){document.getElementById('celMsg').textContent=CEL_MSGS[Math.floor(Math.random()*CEL_MSGS.length)];document.getElementById('overlay').classList.add('show');}
 
 // ══════════════════════════════════════════════
-//  STT
+//  🎤 개선된 STT (긴 타임아웃 + 중간결과 + 확인 후 전송)
 // ══════════════════════════════════════════════
+let interimText='';
+
 function toggleMic(){
   const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
   if(!SR){alert('Chrome 브라우저에서만 음성 입력이 가능해요! 🌐');return;}
   if(isRec){recog?.stop();return;}
+
   recog=new SR();
-  recog.lang=mode==='roleplay'?'en-US':(level==='pro'?'en-US':'ko-KR');
-  recog.onstart=()=>{isRec=true;document.getElementById('micBtn').classList.add('rec');document.getElementById('micBtn').textContent='🔴';};
-  recog.onend=()=>{isRec=false;document.getElementById('micBtn').classList.remove('rec');document.getElementById('micBtn').textContent='🎤';};
-  recog.onresult=e=>{document.getElementById('userInput').value=e.results[0][0].transcript;sendMsg();};
-  recog.onerror=()=>{isRec=false;document.getElementById('micBtn').classList.remove('rec');document.getElementById('micBtn').textContent='🎤';};
+  recog.lang         = mode==='roleplay'?'en-US':(level==='pro'?'en-US':'ko-KR');
+  recog.continuous   = true;   // 계속 듣기 (끊기지 않음)
+  recog.interimResults= true;  // 중간 결과 실시간 표시
+  recog.maxAlternatives=3;     // 후보 3개 중 가장 좋은 것 선택
+
+  const inp=document.getElementById('userInput');
+  const micBtn=document.getElementById('micBtn');
+
+  recog.onstart=()=>{
+    isRec=true;
+    micBtn.classList.add('rec');
+    micBtn.textContent='🔴';
+    inp.placeholder='🎤 듣고 있어요... 천천히 말해도 괜찮아요!';
+    inp.style.borderColor='#EF5350';
+    interimText='';
+  };
+
+  recog.onresult=e=>{
+    let interim='', final='';
+    for(let i=e.resultIndex;i<e.results.length;i++){
+      const t=e.results[i][0].transcript;
+      if(e.results[i].isFinal) final+=t;
+      else interim+=t;
+    }
+    // 실시간으로 입력창에 표시
+    interimText=(inp.value.replace(/\[듣는 중: .*?\]/g,'')||'')+
+      (final||'')+(interim?` [듣는 중: ${interim}]`:'');
+    inp.value=interimText;
+    autoResize(inp);
+  };
+
+  recog.onend=()=>{
+    isRec=false;
+    micBtn.classList.remove('rec');
+    micBtn.textContent='🎤';
+    inp.placeholder='영어나 한국어로 말해보세요! 😊';
+    inp.style.borderColor='';
+
+    // [듣는 중: ...] 제거하고 최종 텍스트만 남김
+    let finalVal=inp.value.replace(/\s*\[듣는 중: .*?\]/g,'').trim();
+    inp.value=finalVal;
+    autoResize(inp);
+
+    // 결과가 있으면 확인 팝업 표시
+    if(finalVal) showSttConfirm(finalVal);
+  };
+
+  recog.onerror=e=>{
+    isRec=false;
+    micBtn.classList.remove('rec');
+    micBtn.textContent='🎤';
+    inp.placeholder='영어나 한국어로 말해보세요! 😊';
+    inp.style.borderColor='';
+    inp.value='';
+    const errMsgs={
+      'no-speech':'소리가 안 들려요. 다시 말해주세요! 🎤',
+      'network':'네트워크 오류가 발생했어요.',
+      'not-allowed':'마이크 권한을 허용해주세요!',
+    };
+    if(e.error!=='aborted') addMsg('ai','⚠️ '+(errMsgs[e.error]||'음성 인식 오류: '+e.error));
+  };
+
   recog.start();
+}
+
+// ── 2초 카운트다운 후 자동 전송 팝업 ──
+let sttCountdownTimer=null;
+
+function showSttConfirm(text){
+  document.getElementById('sttConfirmBox')?.remove();
+  clearInterval(sttCountdownTimer);
+
+  const box=document.createElement('div');
+  box.id='sttConfirmBox';
+  box.style.cssText=`
+    position:fixed;bottom:80px;left:50%;transform:translateX(-50%);
+    background:white;border-radius:18px;padding:12px 14px;
+    box-shadow:0 8px 32px rgba(0,0,0,.22);border:2px solid #5C6BC0;
+    z-index:250;width:min(92%,520px);animation:fadeIn .2s ease;
+  `;
+  box.innerHTML=`
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:7px;">
+      <span style="font-size:.78rem;font-weight:800;color:#5C6BC0;">🎤 이렇게 들렸어요</span>
+      <span style="margin-left:auto;font-size:.72rem;font-weight:800;color:#9E9E9E;">오류면 ✕ 눌러서 다시!</span>
+    </div>
+    <div id="sttTextDisplay" style="background:#F0F4FF;border-radius:10px;padding:9px 12px;font-size:.92rem;font-weight:700;color:#1A237E;line-height:1.5;min-height:38px;">${text}</div>
+    <div style="display:flex;align-items:center;gap:7px;margin-top:9px;">
+      <div style="flex:1;height:5px;background:#E8EAF6;border-radius:4px;overflow:hidden;">
+        <div id="sttBar" style="height:100%;background:linear-gradient(90deg,#5C6BC0,#26C6DA);border-radius:4px;width:100%;transition:width 2s linear;"></div>
+      </div>
+      <span id="sttCountNum" style="font-size:.82rem;font-weight:900;color:#5C6BC0;min-width:18px;">2</span>
+      <button onclick="sttRetry()" style="background:linear-gradient(135deg,#FFD54F,#FF7043);color:white;border:none;border-radius:10px;padding:6px 12px;font-weight:800;cursor:pointer;font-family:'Nunito',sans-serif;font-size:.78rem;">🎤 다시</button>
+      <button onclick="sttCancel()" style="background:white;border:2px solid #E8EAF6;color:#9E9E9E;border-radius:10px;padding:6px 10px;font-weight:800;cursor:pointer;font-family:'Nunito',sans-serif;font-size:.82rem;">✕</button>
+    </div>
+  `;
+  document.body.appendChild(box);
+
+  // 진행 바 애니메이션 (2초)
+  setTimeout(()=>{
+    const bar=document.getElementById('sttBar');
+    if(bar) bar.style.width='0%';
+  },50);
+
+  // 카운트다운 1→0
+  let count=2;
+  sttCountdownTimer=setInterval(()=>{
+    count--;
+    const numEl=document.getElementById('sttCountNum');
+    if(numEl) numEl.textContent=count;
+    if(count<=0){
+      clearInterval(sttCountdownTimer);
+      sttAutoSend(text);
+    }
+  },1000);
+}
+
+function sttAutoSend(text){
+  document.getElementById('sttConfirmBox')?.remove();
+  if(text.trim()){
+    document.getElementById('userInput').value=text.trim();
+    sendMsg();
+  }
+}
+function sttRetry(){
+  clearInterval(sttCountdownTimer);
+  document.getElementById('sttConfirmBox')?.remove();
+  document.getElementById('userInput').value='';
+  setTimeout(toggleMic,200);
+}
+function sttCancel(){
+  clearInterval(sttCountdownTimer);
+  document.getElementById('sttConfirmBox')?.remove();
+  document.getElementById('userInput').value='';
 }
 
 // ══════════════════════════════════════════════
